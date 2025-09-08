@@ -13,6 +13,7 @@ from telegram.constants import ParseMode
 from config.settings import settings
 from core.handlers.commands import setup_command_handlers
 from core.handlers.callbacks import setup_callback_handlers
+from database.connection import init_database
 
 # Настройка логирования
 logging.basicConfig(
