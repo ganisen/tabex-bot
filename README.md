@@ -19,9 +19,20 @@ cd tabex-bot
 ```
 
 2. **Настройка переменных окружения**
+
+**Linux/Mac:**
 ```bash
 # Скопируйте пример конфигурации
 cp .env.example .env
+
+# Отредактируйте .env файл и укажите ваш BOT_TOKEN
+# Получить токен можно у @BotFather в Telegram
+```
+
+**Windows (PowerShell/CMD):**
+```cmd
+# Скопируйте пример конфигурации
+copy .env.example .env
 
 # Отредактируйте .env файл и укажите ваш BOT_TOKEN
 # Получить токен можно у @BotFather в Telegram
@@ -149,6 +160,8 @@ python main.py
 ```
 
 ### Сборка Docker образа вручную
+
+**Linux/Mac:**
 ```bash
 # Сборка образа
 docker build -t tabex-bot:latest .
@@ -159,6 +172,34 @@ docker run -d \
   --env-file .env \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/logs:/app/logs \
+  tabex-bot:latest
+```
+
+**Windows (PowerShell):**
+```powershell
+# Сборка образа
+docker build -t tabex-bot:latest .
+
+# Запуск контейнера
+docker run -d `
+  --name tabex-bot `
+  --env-file .env `
+  -v ${PWD}/data:/app/data `
+  -v ${PWD}/logs:/app/logs `
+  tabex-bot:latest
+```
+
+**Windows (CMD):**
+```cmd
+# Сборка образа
+docker build -t tabex-bot:latest .
+
+# Запуск контейнера
+docker run -d ^
+  --name tabex-bot ^
+  --env-file .env ^
+  -v %cd%/data:/app/data ^
+  -v %cd%/logs:/app/logs ^
   tabex-bot:latest
 ```
 
@@ -176,12 +217,24 @@ docker-compose config
 ```
 
 2. **База данных не создается**
+
+**Linux/Mac:**
 ```bash
 # Проверьте права доступа к директории data
 ls -la data/
 
 # Создайте директорию вручную если нужно
 mkdir -p data logs
+```
+
+**Windows:**
+```cmd
+# Проверьте существование директории data
+dir data
+
+# Создайте директории вручную если нужно
+mkdir data
+mkdir logs
 ```
 
 3. **Бот не отвечает**

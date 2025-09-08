@@ -20,7 +20,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./tabex_bot.log:/app/tabex_bot.log
+      # Лог файл создается автоматически внутри контейнера
     
     # Ограничения ресурсов
     deploy:
