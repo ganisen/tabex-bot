@@ -1,0 +1,86 @@
+# Файлы Git
+.git
+.gitignore
+.gitattributes
+
+# Файлы и директории Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Виртуальные окружения
+.env
+.env.*
+.venv
+venv/
+ENV/
+env/
+.python-version
+
+# IDE и редакторы
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS генерируемые файлы
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Логи и временные файлы
+*.log
+logs/
+log/
+*.tmp
+*.temp
+
+# Тесты и покрытие
+.coverage
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+.nyc_output
+coverage/
+
+# Документация
+docs/_build/
+
+# Развертывание
+*.tar.gz
+*.zip
+
+# Docker файлы
+Dockerfile.*
+docker-compose.*.yml
+
+# Локальная база данных (будет монтироваться как том)
+# data/tabex_bot.db
+
+# README и документация разработки
+README.md
+docs/

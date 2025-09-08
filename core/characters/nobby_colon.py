@@ -21,7 +21,7 @@ class NobbyColonCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Nobby & Colon", 
+            name="Шноббс и Колон", 
             phase_days=(4, 12),
             emoji="🥔🪖"
         )

@@ -20,7 +20,7 @@ class DeathCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Death",
+            name="СМЕРТЬ",
             phase_days=(0, 0),  # Специальный персонаж, не привязан к дням
             emoji="💀"
         )

@@ -20,7 +20,7 @@ class CarrotCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Carrot",
+            name="Моркоу",
             phase_days=(17, 20),
             emoji="🛡️"
         )

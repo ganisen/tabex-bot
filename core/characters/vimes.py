@@ -20,7 +20,7 @@ class VimesCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Vimes",
+            name="Ваймс",
             phase_days=(21, 25),
             emoji="🏴‍☠️"
         )

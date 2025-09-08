@@ -122,11 +122,11 @@ class ScheduleService:
         now = datetime.now()
         current_day = course.days_since_start
         
-        # Получаем все принятые дозы для быстрого поиска
-        taken_doses = {
+        # Получаем все обработанные дозы (принятые, пропущенные, пропущенные намеренно) для быстрого поиска
+        processed_doses = {
             (log.scheduled_time.date(), log.scheduled_time.time()): log
             for log in existing_logs 
-            if log.status == TabexLogStatus.TAKEN.value
+            if log.status in [TabexLogStatus.TAKEN.value, TabexLogStatus.MISSED.value, TabexLogStatus.SKIPPED.value]
         }
         
         # Проверяем каждый день от начала до текущего
@@ -138,9 +138,9 @@ class ScheduleService:
                 if dose_schedule.scheduled_time > now:
                     continue
                 
-                # Проверяем, принята ли доза
+                # Проверяем, обработана ли доза (принята, пропущена или намеренно пропущена)
                 dose_key = (dose_schedule.scheduled_time.date(), dose_schedule.scheduled_time.time())
-                if dose_key not in taken_doses:
+                if dose_key not in processed_doses:
                     dose_schedule.is_overdue = True
                     overdue_doses.append(dose_schedule)
         

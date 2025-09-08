@@ -277,13 +277,30 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         tabex_repo = TabexRepository()
         all_logs = await tabex_repo.get_logs_by_course_id(active_course.course_id)
         
-        # Вычисляем статистику
-        total_scheduled = len(all_logs)
+        # Вычисляем статистику - правильный подсчет запланированных доз
         taken_count = sum(1 for log in all_logs if log.is_taken)
         missed_count = sum(1 for log in all_logs if log.is_missed or log.is_skipped)
         
-        compliance_percent = int((taken_count / max(total_scheduled, 1)) * 100)
+        # Считаем реально запланированные дозы на основе дней курса и фаз
         days_passed = active_course.days_since_start
+        total_scheduled = 0
+        
+        # Получаем время первой дозы из логов для правильного расчета
+        first_dose_time = "09:00"  # По умолчанию
+        if all_logs:
+            earliest_log = min(all_logs, key=lambda x: x.scheduled_time)
+            first_dose_time = earliest_log.scheduled_time.strftime("%H:%M")
+        
+        # Считаем запланированные дозы за каждый прошедший день
+        for day in range(1, days_passed + 1):
+            daily_schedule = schedule_service.calculate_daily_schedule(active_course, first_dose_time, day)
+            # Считаем только дозы которые уже должны были произойти
+            now = datetime.now()
+            for dose in daily_schedule:
+                if dose.scheduled_time <= now:
+                    total_scheduled += 1
+        
+        compliance_percent = int((taken_count / max(total_scheduled, 1)) * 100)
         
         # Определяем, бросил ли курить (5-й день прошел)
         quit_smoking_info = ""

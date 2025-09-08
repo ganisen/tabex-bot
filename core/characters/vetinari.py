@@ -20,7 +20,7 @@ class VetinariCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Vetinari",
+            name="Ветинари",
             phase_days=(26, 999),  # Финальный персонаж
             emoji="👑"
         )

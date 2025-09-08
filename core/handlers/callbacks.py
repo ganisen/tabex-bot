@@ -98,13 +98,13 @@ async def _handle_dose_taken(query, context: ContextTypes.DEFAULT_TYPE, callback
     try:
         # Парсим callback_data: dose_taken_123_1234567890
         parts = callback_data.split('_')
-        if len(parts) != 3:
+        if len(parts) != 4:
             logger.error(f"Некорректный формат callback_data: {callback_data}")
             await query.edit_message_text("❌ Ошибка обработки запроса")
             return
         
-        course_id = int(parts[1])
-        dose_timestamp = int(parts[2])
+        course_id = int(parts[2])
+        dose_timestamp = int(parts[3])
         
         # Обрабатываем через сервис напоминаний
         response = await reminder_service.handle_dose_taken(
@@ -132,13 +132,13 @@ async def _handle_dose_postpone(query, context: ContextTypes.DEFAULT_TYPE, callb
     try:
         # Парсим callback_data
         parts = callback_data.split('_')
-        if len(parts) != 3:
+        if len(parts) != 4:
             logger.error(f"Некорректный формат callback_data: {callback_data}")
             await query.edit_message_text("❌ Ошибка обработки запроса")
             return
         
-        course_id = int(parts[1])
-        dose_timestamp = int(parts[2])
+        course_id = int(parts[2])
+        dose_timestamp = int(parts[3])
         
         # Обрабатываем через сервис напоминаний
         response = await reminder_service.handle_dose_postpone(
@@ -166,13 +166,13 @@ async def _handle_dose_skip(query, context: ContextTypes.DEFAULT_TYPE, callback_
     try:
         # Парсим callback_data
         parts = callback_data.split('_')
-        if len(parts) != 3:
+        if len(parts) != 4:
             logger.error(f"Некорректный формат callback_data: {callback_data}")
             await query.edit_message_text("❌ Ошибка обработки запроса")
             return
         
-        course_id = int(parts[1])
-        dose_timestamp = int(parts[2])
+        course_id = int(parts[2])
+        dose_timestamp = int(parts[3])
         
         # Обрабатываем через сервис напоминаний
         response = await reminder_service.handle_dose_skip(
@@ -465,7 +465,10 @@ async def _finish_catchup_and_start_program(query, context: ContextTypes.DEFAULT
             # Если была отсрочка - устанавливаем напоминание через 5 минут
             from datetime import datetime, timedelta
             postponed_time = datetime.now() + timedelta(minutes=5)
+            # Используем текущее время как "оригинальное" для catch-up процесса
+            original_time = datetime.now()
             reminder_service.postponed_reminders[query.from_user.id] = postponed_time
+            reminder_service.postponed_reminders[f"{query.from_user.id}_original_time"] = original_time
         
         if success:
             logger.info(f"Напоминания запущены после опроса для пользователя {query.from_user.id}")

@@ -21,7 +21,7 @@ class AnguaCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Angua",
+            name="Ангва",
             phase_days=(13, 16), 
             emoji="🐺"
         )

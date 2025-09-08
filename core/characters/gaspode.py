@@ -19,7 +19,7 @@ class GaspodeCharacter(BaseCharacter):
     
     def __init__(self):
         super().__init__(
-            name="Gaspode",
+            name="Гаспод",
             phase_days=(1, 3),
             emoji="🐺"
         )
