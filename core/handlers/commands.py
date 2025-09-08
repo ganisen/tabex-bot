@@ -33,6 +33,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Инициализируем базу данных, если нужно
         await init_database()
         
+        # Очищаем флаги ожидания подтверждения удаления (отмена /quit)
+        context.user_data.pop('awaiting_deletion_confirmation', None)
+        context.user_data.pop('user_to_delete', None)
+        
         # Проверяем, существует ли пользователь
         existing_user = await user_repo.get_by_telegram_id(user.id)
         
@@ -165,7 +169,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **Доступные команды:**
 /start - арест и начало программы исправления (встреча с Гаспода)
 /stats - посмотреть свой прогресс в исправлении
-/quit - досрочно завершить программу (вызывает СМЕРТЬ)
+/quit - полное удаление из системы (требует подтверждения)
 /help - эта справка (ты уже тут)
 
 **Как это работает:**
@@ -271,7 +275,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
         # Получаем статистику из базы данных
         tabex_repo = TabexRepository()
-        all_logs = await tabex_repo.get_by_course_id(active_course.course_id)
+        all_logs = await tabex_repo.get_logs_by_course_id(active_course.course_id)
         
         # Вычисляем статистику
         total_scheduled = len(all_logs)
@@ -321,12 +325,29 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
 
-async def handle_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обработчик ввода времени первого приёма таблетки.
+    Обработчик текстовых сообщений от пользователей.
+    
+    Обрабатывает:
+    - Подтверждение удаления "ПОДТВЕРЖДАЮ"
+    - Ввод времени первого приёма таблетки
     """
     user = update.effective_user
     text = update.message.text.strip()
+    
+    # Проверяем подтверждение удаления
+    if context.user_data.get('awaiting_deletion_confirmation'):
+        if text == "ПОДТВЕРЖДАЮ":
+            await handle_deletion_confirmation(update, context)
+            return
+        else:
+            await update.message.reply_text(
+                "❓ Для подтверждения удаления напиши точно: **ПОДТВЕРЖДАЮ**\n"
+                "Для отмены используй: `/start`",
+                parse_mode='Markdown'
+            )
+            return
     
     # Проверяем, ожидаем ли мы ввод времени от этого пользователя
     if not context.user_data.get('awaiting_first_dose_time'):
@@ -394,13 +415,30 @@ async def handle_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Получаем текущего персонажа (должен быть Гаспод)
         current_character = character_service.get_current_character(course_obj)
         
-        # Проверяем, нужно ли подтягивать пропущенные дозы
+        # Создаем запись о принятой первой дозе
+        from core.models.tabex_log import TabexLog, TabexLogStatus
+        from database.repositories import TabexRepository
+        
+        tabex_repo = TabexRepository()
         now = datetime.now()
         first_time = datetime.combine(now.date(), datetime.strptime(first_dose_time, "%H:%M").time())
         
+        # Создаем запись о первой дозе как принятой
+        first_dose_log = TabexLog(
+            log_id=None,
+            course_id=course_obj.course_id,
+            scheduled_time=first_time,
+            actual_time=first_time,
+            status=TabexLogStatus.TAKEN.value,
+            phase=course_obj.current_phase,
+            character_response=f"{current_character.name} записал первый приём в {first_dose_time}"
+        )
+        await tabex_repo.create_log(first_dose_log)
+        logger.info(f"Создана запись о первой дозе в {first_dose_time} для пользователя {user_obj.telegram_id}")
+        
         if first_time < now:
             # Время уже прошло сегодня - ищем пропущенные дозы
-            existing_logs = []  # Пока что пустой список, так как курс только начинается
+            existing_logs = [first_dose_log]  # Включаем созданную первую дозу
             overdue_doses = schedule_service.get_overdue_doses(course_obj, first_dose_time, existing_logs)
             
             if overdue_doses:
@@ -582,59 +620,150 @@ async def _start_normal_program(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Ошибка при запуске обычной программы: {e}")
 
 
+async def handle_deletion_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обрабатывает подтверждение удаления пользователя.
+    
+    Выполняет полное удаление всех данных пользователя из системы.
+    """
+    user = update.effective_user
+    user_id_to_delete = context.user_data.get('user_to_delete')
+    
+    try:
+        if not user_id_to_delete:
+            await update.message.reply_text(
+                "⚠️ Ошибка: не найден ID пользователя для удаления. Попробуй /quit заново."
+            )
+            return
+        
+        # Получаем все репозитории
+        user_repo = UserRepository()
+        treatment_repo = TreatmentRepository()
+        tabex_repo = TabexRepository()
+        
+        # Останавливаем напоминания
+        await reminder_service.stop_reminders_for_user(user.id)
+        
+        # Удаляем данные в правильном порядке (от зависимых к независимым)
+        # 1. Удаляем записи приёмов и взаимодействия (зависят от курсов)
+        await tabex_repo.delete_all_logs_for_user(user_id_to_delete)
+        await tabex_repo.delete_all_interactions_for_user(user_id_to_delete)
+        
+        # 2. Удаляем курсы лечения (зависят от пользователя)
+        await treatment_repo.delete_all_by_user_id(user_id_to_delete)
+        
+        # 3. Удаляем самого пользователя
+        await user_repo.delete(user_id_to_delete)
+        
+        # Очищаем данные контекста
+        context.user_data.clear()
+        
+        death_farewell = """
+💀 **ГОТОВО.**
+
+Смерть выполнила твою просьбу. Твоё досье стёрто из архивов Стражи.
+
+**Что произошло:**
+✅ Удалены все курсы лечения
+✅ Удалена вся статистика
+✅ Удалена история взаимодействий  
+✅ Остановлены все напоминания
+✅ Стёрта твоя учётная запись
+
+Теперь ты можешь начать заново. Используй `/start` когда будешь готов к новой программе исправления.
+
+*"Некоторые люди думают, что Смерть жестока. Но на самом деле Смерть даёт второй шанс."*
+
+— Смерть (архивариус забвения)
+
+**Увидимся снова, когда решишь вернуться...**
+"""
+        
+        await update.message.reply_text(
+            death_farewell,
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Пользователь {user.id} полностью удален из системы")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при удалении пользователя {user.id}: {e}")
+        await update.message.reply_text(
+            "💀 **ОШИБКА СМЕРТИ**\n\n"
+            "Что-то пошло не так при стирании досье. "
+            "Попробуй позже или обратись к администратору."
+        )
+        # Очищаем флаг ожидания даже при ошибке
+        context.user_data.pop('awaiting_deletion_confirmation', None)
+        context.user_data.pop('user_to_delete', None)
+
+
 async def quit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обработчик команды /quit - досрочное завершение курса лечения.
+    Обработчик команды /quit - полное удаление пользователя из системы.
     
-    Активирует персонажа СМЕРТЬ, который объясняет последствия.
+    Запрашивает подтверждение и удаляет ВСЕ данные пользователя.
     """
     user = update.effective_user
     
     try:
         await init_database()
         
-        # Получаем данные пользователя и курса
+        # Получаем данные пользователя
         user_repo = UserRepository()
         user_obj = await user_repo.get_by_telegram_id(user.id)
         
         if not user_obj:
             await update.message.reply_text(
-                "❓ Ты не зарегистрирован в системе. Нет курса для завершения."
+                "❓ Ты не зарегистрирован в системе. Нечего удалять."
             )
             return
         
-        treatment_repo = TreatmentRepository()
-        active_course = await treatment_repo.get_active_by_user_id(user_obj.user_id)
-        
-        if not active_course:
+        # Проверяем, не ждем ли мы уже подтверждение от этого пользователя
+        if context.user_data.get('awaiting_deletion_confirmation'):
             await update.message.reply_text(
-                "❓ У тебя нет активного курса лечения. Нечего завершать."
+                "⚠️ Я уже жду твоего подтверждения. Напиши **ПОДТВЕРЖДАЮ** или /start чтобы отменить.",
+                parse_mode='Markdown'
             )
             return
         
-        # Останавливаем напоминания
-        await reminder_service.stop_reminders_for_user(user.id)
+        # Устанавливаем флаг ожидания подтверждения
+        context.user_data['awaiting_deletion_confirmation'] = True
+        context.user_data['user_to_delete'] = user_obj.user_id
         
-        # Активируем сценарий СМЕРТИ
-        death_message = character_service.activate_death_scenario(
-            active_course, user_obj.first_name, user_obj.gender, "досрочное_завершение"
-        )
-        
-        # Сохраняем изменения в курсе
-        await treatment_repo.update(active_course)
+        warning_message = f"""
+💀 **ВНИМАНИЕ, {user_obj.first_name}!**
+
+Ты запросил полное удаление из системы Табекс-помощника.
+
+**Это действие:**
+• Удалит ВСЕ твои данные из системы
+• Удалит всю историю лечения  
+• Удалит все курсы и статистику
+• Остановит все напоминания
+• **ДЕЙСТВИЕ НЕОБРАТИМО!**
+
+После удаления ты сможешь начать заново с чистого листа.
+
+**Для подтверждения напиши точно:** `ПОДТВЕРЖДАЮ`
+**Для отмены используй:** `/start`
+
+*"Смерть - это не конец. Это просто... очень неудобно."*
+
+— Смерть (готов стереть твоё досье)
+"""
         
         await update.message.reply_text(
-            death_message,
+            warning_message,
             parse_mode='Markdown'
         )
         
-        logger.info(f"Пользователь {user.id} досрочно завершил курс лечения")
+        logger.info(f"Пользователь {user.id} запросил удаление данных, ждем подтверждения")
         
     except Exception as e:
-        logger.error(f"Ошибка при досрочном завершении курса: {e}")
+        logger.error(f"Ошибка при инициации удаления пользователя: {e}")
         await update.message.reply_text(
-            "⚠️ Произошла ошибка при завершении курса. "
-            "Попробуйте позже или обратитесь к администратору."
+            "⚠️ Произошла ошибка. Попробуйте позже или обратитесь к администратору."
         )
 
 
@@ -654,8 +783,8 @@ def setup_command_handlers(app: Application) -> None:
         # Команда завершения курса досрочно
         app.add_handler(CommandHandler("quit", quit_command))
         
-        # Обработчик ввода времени (текстовые сообщения)
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_time_input))
+        # Обработчик текстовых сообщений (время, подтверждение удаления)
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
         
         logger.info("Обработчики команд успешно зарегистрированы")
         

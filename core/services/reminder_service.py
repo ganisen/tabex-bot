@@ -229,7 +229,7 @@ class ReminderService:
                 status=TabexLogStatus.SCHEDULED.value,
                 phase=course.current_phase
             )
-            await self.tabex_repo.create(tabex_log)
+            await self.tabex_repo.create_log(tabex_log)
             
             logger.info(f"Отправлено напоминание от {current_character.name} пользователю {user_id}")
             
@@ -362,23 +362,23 @@ class ReminderService:
                 tabex_log.mark_skipped()
                 await self.tabex_repo.update(tabex_log)
             
-        # Получаем количество пропусков для статистики
-        all_logs = await self.tabex_repo.get_by_course_id(course_id)
-        missed_count = sum(1 for log in all_logs if log.is_missed or log.is_skipped)
-        
-        # Получаем ответ от персонажа  
-        current_character = character_service.get_current_character(course)
-        
-        # Реакция персонажа на пропуск (без активации СМЕРТИ)
-        if missed_count > 3:
-            response = current_character.get_warning_message(user_obj.first_name, user_obj.gender, missed_count)
-        elif missed_count > 1:
-            response = current_character.get_warning_message(user_obj.first_name, user_obj.gender, missed_count)
-        else:
-            response = current_character.get_dose_skipped_response(user_obj.first_name, user_obj.gender)
-        
-        logger.info(f"Пользователь {user_id} пропустил дозу в {dose_time} (всего пропусков: {missed_count})")
-        return response
+            # Получаем количество пропусков для статистики
+            all_logs = await self.tabex_repo.get_by_course_id(course_id)
+            missed_count = sum(1 for log in all_logs if log.is_missed or log.is_skipped)
+            
+            # Получаем ответ от персонажа  
+            current_character = character_service.get_current_character(course)
+            
+            # Реакция персонажа на пропуск (без активации СМЕРТИ)
+            if missed_count > 3:
+                response = current_character.get_warning_message(user_obj.first_name, user_obj.gender, missed_count)
+            elif missed_count > 1:
+                response = current_character.get_warning_message(user_obj.first_name, user_obj.gender, missed_count)
+            else:
+                response = current_character.get_dose_skipped_response(user_obj.first_name, user_obj.gender)
+            
+            logger.info(f"Пользователь {user_id} пропустил дозу в {dose_time} (всего пропусков: {missed_count})")
+            return response
             
         except Exception as e:
             logger.error(f"Ошибка при обработке пропуска дозы: {e}")

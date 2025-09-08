@@ -227,7 +227,7 @@ async def _handle_catchup_taken(query, context: ContextTypes.DEFAULT_TYPE, callb
             phase=dose_schedule.phase,
             character_response=f"Подтверждено в режиме опроса"
         )
-        await tabex_repo.create(tabex_log)
+        await tabex_repo.create_log(tabex_log)
         
         # Получаем персонажа для реакции
         current_character = character_service.get_current_character(course_obj)
@@ -280,7 +280,7 @@ async def _handle_catchup_missed(query, context: ContextTypes.DEFAULT_TYPE, call
             phase=dose_schedule.phase,
             character_response=f"Пропущено (подтверждено в опросе)"
         )
-        await tabex_repo.create(tabex_log)
+        await tabex_repo.create_log(tabex_log)
         
         # Реакция персонажа
         current_character = character_service.get_current_character(course_obj)

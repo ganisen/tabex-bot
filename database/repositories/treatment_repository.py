@@ -367,6 +367,31 @@ class TreatmentRepository:
             logger.error(f"Ошибка изменения статуса курса {course_id} на {status}: {e}")
             raise
     
+    async def delete_all_by_user_id(self, user_id: int) -> bool:
+        """
+        Удаляет все курсы лечения пользователя.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            bool: True, если курсы были удалены
+        """
+        query = "DELETE FROM treatment_courses WHERE user_id = ?"
+        
+        try:
+            async with self.db.get_connection() as conn:
+                cursor = await conn.execute(query, (user_id,))
+                rows_affected = cursor.rowcount
+                await conn.commit()
+            
+            logger.info(f"Удалено {rows_affected} курсов лечения для пользователя {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка удаления курсов лечения для пользователя {user_id}: {e}")
+            raise
+
     def _row_to_treatment(self, row) -> TreatmentCourse:
         """
         Преобразует строку из базы данных в объект TreatmentCourse.

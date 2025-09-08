@@ -411,6 +411,66 @@ class TabexRepository:
             created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else None
         )
     
+    async def delete_all_logs_for_user(self, user_id: int) -> bool:
+        """
+        Удаляет все записи приёма таблеток для пользователя.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            bool: True, если записи были удалены
+        """
+        query = """
+            DELETE FROM tabex_logs 
+            WHERE course_id IN (
+                SELECT course_id FROM treatment_courses WHERE user_id = ?
+            )
+        """
+        
+        try:
+            async with self.db.get_connection() as conn:
+                cursor = await conn.execute(query, (user_id,))
+                rows_affected = cursor.rowcount
+                await conn.commit()
+            
+            logger.info(f"Удалено {rows_affected} записей приёма для пользователя {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка удаления записей приёма для пользователя {user_id}: {e}")
+            raise
+    
+    async def delete_all_interactions_for_user(self, user_id: int) -> bool:
+        """
+        Удаляет все взаимодействия с персонажами для пользователя.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            bool: True, если взаимодействия были удалены
+        """
+        query = """
+            DELETE FROM character_interactions 
+            WHERE course_id IN (
+                SELECT course_id FROM treatment_courses WHERE user_id = ?
+            )
+        """
+        
+        try:
+            async with self.db.get_connection() as conn:
+                cursor = await conn.execute(query, (user_id,))
+                rows_affected = cursor.rowcount
+                await conn.commit()
+            
+            logger.info(f"Удалено {rows_affected} взаимодействий с персонажами для пользователя {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка удаления взаимодействий для пользователя {user_id}: {e}")
+            raise
+
     def _row_to_interaction(self, row) -> CharacterInteraction:
         """
         Преобразует строку из базы данных в объект CharacterInteraction.
