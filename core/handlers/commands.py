@@ -11,7 +11,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 from core.models.user import User
 from core.models.treatment import TreatmentCourse
-from database.repositories import UserRepository, TreatmentRepository
+from core.services.reminder_service import reminder_service
+from core.services.character_service import character_service
+from core.services.schedule_service import schedule_service
+from database.repositories import UserRepository, TreatmentRepository, TabexRepository
 from database.connection import init_database
 
 logger = logging.getLogger(__name__)
@@ -162,17 +165,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **Доступные команды:**
 /start - арест и начало программы исправления (встреча с Гаспода)
 /stats - посмотреть свой прогресс в исправлении
+/quit - досрочно завершить программу (вызывает СМЕРТЬ)
 /help - эта справка (ты уже тут)
 
 **Как это работает:**
 1. Говоришь /start - Гаспод тебя арестовывает
 2. Выбираешь свой пол (важно для протокола)
 3. Вводишь время первой таблетки  
-4. Каждые 2 часа получаешь напоминания от разных стражников
-5. Принимаешь таблетку и подтверждаешь
+4. Получаешь напоминания от разных стражников по расписанию фаз
+5. Принимаешь таблетку через inline-кнопки
 6. Смотришь /stats для контроля прогресса
 
-По мере прохождения курса тебя будут передавать разным персонажам Стражи. От простых стражников до самого Лорда Витинари!
+**Кнопки в напоминаниях:**
+• ✅ ТАБЛЕТКА ПРИНЯТА - подтверждение приёма
+• ⏰ ОТЛОЖИТЬ НА 5 МИН - отсрочка напоминания  
+• ❌ ПРОПУСК - намеренный пропуск дозы
+
+По мере прохождения курса тебя будут передавать разным персонажам Стражи. 25 дней до финала!
 
 *"Закон как кость - грызть долго, но полезно для зубов."*
 
@@ -231,46 +240,84 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обработчик команды /stats - статистика прогресса от капитана Ваймса.
+    Обработчик команды /stats - статистика прогресса от текущего персонажа.
     """
     user = update.effective_user
     
-    # TODO: В следующих этапах здесь будет реальная статистика из БД
-    vimes_stats = """
-🏴‍☠️ **Отчет капитана Ваймса о твоем прогрессе**
+    try:
+        await init_database()
+        
+        # Получаем данные пользователя и курса
+        user_repo = UserRepository()
+        user_obj = await user_repo.get_by_telegram_id(user.id)
+        
+        if not user_obj:
+            await update.message.reply_text(
+                "❓ Ты не зарегистрирован в системе. Начни с команды /start"
+            )
+            return
+        
+        treatment_repo = TreatmentRepository()
+        active_course = await treatment_repo.get_active_by_user_id(user_obj.user_id)
+        
+        if not active_course:
+            await update.message.reply_text(
+                "❓ У тебя нет активного курса лечения. Начни новый с команды /start"
+            )
+            return
+        
+        # Получаем текущего персонажа
+        current_character = character_service.get_current_character(active_course)
+        
+        # Получаем статистику из базы данных
+        tabex_repo = TabexRepository()
+        all_logs = await tabex_repo.get_by_course_id(active_course.course_id)
+        
+        # Вычисляем статистику
+        total_scheduled = len(all_logs)
+        taken_count = sum(1 for log in all_logs if log.is_taken)
+        missed_count = sum(1 for log in all_logs if log.is_missed or log.is_skipped)
+        
+        compliance_percent = int((taken_count / max(total_scheduled, 1)) * 100)
+        days_passed = active_course.days_since_start
+        
+        # Определяем, бросил ли курить (5-й день прошел)
+        quit_smoking_info = ""
+        if days_passed >= 5:
+            quit_date = active_course.smoking_quit_date or (active_course.start_date + timedelta(days=4))
+            days_smoke_free = (date.today() - quit_date).days + 1
+            quit_smoking_info = f"🚭 **Дни без курения:** {days_smoke_free}\n"
+        
+        # Генерируем отчет от персонажа
+        stats_message = f"""
+{current_character.emoji} **Отчет {current_character.name} о твоем прогрессе**
 
 📊 **Статистика программы исправления:**
 
-*Пока что база данных не подключена, гражданин. Но капитан Ваймс ведет записи в блокноте.*
+📅 **Дата начала:** {active_course.start_date.strftime('%d.%m.%Y')}
+⏰ **Дней прошло:** {days_passed}/25
+📊 **Текущая фаза:** {active_course.current_phase}
+{quit_smoking_info}
+✅ **Принято таблеток:** {taken_count}
+❌ **Пропущено:** {missed_count}
+📈 **Соблюдение режима:** {compliance_percent}%
 
-**Что будет здесь:**
-• Дата начала программы исправления
-• Количество принятых таблеток
-• Количество пропущенных приёмов
-• Процент соблюдения режима
-• Дни без сигарет (когда это наступит)
+**Текущий персонаж:** {current_character.name} {current_character.emoji}
 
-**Текущий статус:** Программа настройки ⚙️
-
-*"Статистика похожа на купальник: показывает многое, но скрывает самое главное."*
-
-— Капитан Ваймс (пока что ведет учёт вручную)
-
-Возвращайся позже, когда система будет полностью готова к работе.
+*{current_character.get_encouragement_message(user_obj.first_name, user_obj.gender, compliance_percent)}*
 """
-    
-    try:
+        
         await update.message.reply_text(
-            vimes_stats,
+            stats_message,
             parse_mode='Markdown'
         )
-        logger.info(f"Капитан Ваймс показал статистику пользователю {user.id} ({user.first_name})")
+        logger.info(f"{current_character.name} показал статистику пользователю {user.id}")
         
     except Exception as e:
         logger.error(f"Ошибка при отправке статистики: {e}")
         await update.message.reply_text(
-            "Капитан Ваймс временно не может показать статистику. "
-            "Его блокнот где-то потерялся в архивах Стражи."
+            "⚠️ Произошла ошибка при получении статистики. "
+            "Попробуйте позже или обратитесь к администратору."
         )
 
 
@@ -344,33 +391,173 @@ async def handle_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data['awaiting_first_dose_time'] = False
         context.user_data['program_started'] = True
         
-        # Рассчитываем следующий приём (через 2 часа)
+        # Получаем текущего персонажа (должен быть Гаспод)
+        current_character = character_service.get_current_character(course_obj)
+        
+        # Проверяем, нужно ли подтягивать пропущенные дозы
         now = datetime.now()
         first_time = datetime.combine(now.date(), datetime.strptime(first_dose_time, "%H:%M").time())
+        
         if first_time < now:
-            first_time += timedelta(days=1)  # Если время уже прошло, то на следующий день
+            # Время уже прошло сегодня - ищем пропущенные дозы
+            existing_logs = []  # Пока что пустой список, так как курс только начинается
+            overdue_doses = schedule_service.get_overdue_doses(course_obj, first_dose_time, existing_logs)
+            
+            if overdue_doses:
+                # Есть пропущенные дозы - начинаем интерактивный опрос
+                await _start_interactive_catchup(update, context, user_obj, course_obj, current_character, overdue_doses, first_dose_time)
+                return
         
-        next_dose = first_time + timedelta(hours=2)
+        # Нет пропущенных доз - запускаем обычный режим
+        await _start_normal_program(update, context, user_obj, course_obj, current_character, first_dose_time)
         
-        # Генерируем гендерно-зависимое подтверждение от Гаспода
+    except Exception as e:
+        logger.error(f"Ошибка при подтверждении времени: {e}")
+        await update.message.reply_text(
+            "🐺 Рррр! Что-то пошло не так с записью времени! "
+            "Попробуй /start еще раз или беги к ветеринару!"
+        )
+
+
+async def _start_interactive_catchup(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                   user_obj: User, course_obj: TreatmentCourse,
+                                   current_character, overdue_doses, first_dose_time: str) -> None:
+    """
+    Запускает интерактивный опрос по пропущенным дозам.
+    
+    Args:
+        update: Объект обновления Telegram
+        context: Контекст обработчика
+        user_obj: Объект пользователя
+        course_obj: Объект курса лечения
+        current_character: Текущий персонаж
+        overdue_doses: Список пропущенных доз
+        first_dose_time: Время первой дозы
+    """
+    try:
+        gender_pronoun = "гражданин" if user_obj.is_male() else "гражданка"
+        
+        # Сохраняем состояние для callback'ов
+        context.user_data['catchup_mode'] = True
+        context.user_data['overdue_doses'] = overdue_doses
+        context.user_data['current_catchup_index'] = 0
+        context.user_data['first_dose_time'] = first_dose_time
+        
+        # Сообщение о начале опроса
+        intro_message = f"""
+{current_character.emoji} **Стоп, {gender_pronoun} {user_obj.first_name}!**
+
+{current_character.name} заметил: с **{first_dose_time}** уже прошло время для **{len(overdue_doses)} доз**!
+
+Нужно выяснить - что ты делал{"" if user_obj.gender == "male" else "а"} всё это время.
+
+**Сейчас проведём допрос по каждой пропущенной дозе.**
+
+*"Стража должна знать правду. Всю правду."*
+
+— {current_character.name} (начинает расследование)
+"""
+        
+        await update.message.reply_text(
+            intro_message,
+            parse_mode='Markdown'
+        )
+        
+        # Запускаем опрос по первой дозе
+        await _ask_about_dose(update, context, user_obj, overdue_doses[0], 0, len(overdue_doses), current_character)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске интерактивного опроса: {e}")
+        await update.message.reply_text(
+            "🐺 Рррр! Что-то пошло не так с опросом! "
+            "Попробуй /start еще раз или беги к ветеринару!"
+        )
+
+
+async def _ask_about_dose(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                         user_obj: User, dose_schedule, dose_index: int, total_doses: int,
+                         current_character) -> None:
+    """
+    Задает вопрос о конкретной пропущенной дозе.
+    
+    Args:
+        update: Объект обновления
+        context: Контекст обработчика
+        user_obj: Объект пользователя
+        dose_schedule: Расписание дозы
+        dose_index: Индекс текущей дозы
+        total_doses: Общее количество доз
+        current_character: Текущий персонаж
+    """
+    try:
+        gender_pronoun = "гражданин" if user_obj.is_male() else "гражданка"
+        dose_time = dose_schedule.scheduled_time.strftime("%H:%M")
+        
+        # Определяем, это последняя (самая актуальная) доза или нет
+        is_last_dose = (dose_index == total_doses - 1)
+        
+        question_message = f"""
+{current_character.emoji} **Допрос #{dose_index + 1}/{total_doses}**
+
+{gender_pronoun.title()} {user_obj.first_name}, что было в **{dose_time}**?
+
+⏰ **Доза №{dose_schedule.dose_number} ({dose_schedule.day}-й день)**
+
+Отвечай честно - {current_character.name} всё равно всё выяснит!
+
+*"Правда выходит наружу рано или поздно."*
+"""
+        
+        # Создаем кнопки
+        buttons = []
+        buttons.append([InlineKeyboardButton("✅ Принял(а)", callback_data=f"catchup_taken_{dose_index}")])
+        buttons.append([InlineKeyboardButton("❌ Пропуск", callback_data=f"catchup_missed_{dose_index}")])
+        
+        # Для последней дозы добавляем вариант отсрочки
+        if is_last_dose:
+            buttons.append([InlineKeyboardButton("⏰ Отложить на 5 мин", callback_data=f"catchup_postpone_{dose_index}")])
+        
+        keyboard = InlineKeyboardMarkup(buttons)
+        
+        await update.message.reply_text(
+            question_message,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при задании вопроса о дозе: {e}")
+
+
+async def _start_normal_program(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                               user_obj: User, course_obj: TreatmentCourse, 
+                               current_character, first_dose_time: str) -> None:
+    """
+    Запускает обычный режим программы без пропущенных доз.
+    
+    Args:
+        update: Объект обновления
+        context: Контекст обработчика  
+        user_obj: Объект пользователя
+        course_obj: Объект курса лечения
+        current_character: Текущий персонаж
+        first_dose_time: Время первой дозы
+    """
+    try:
         gender_pronoun = "гражданин" if user_obj.is_male() else "гражданка"
         
         gaspode_confirmation = f"""
-🐺 **Отлично, {gender_pronoun} {user_obj.first_name}!**
+{current_character.emoji} **Отлично, {gender_pronoun} {user_obj.first_name}!**
 
-Гаспод записал: первый приём в **{first_dose_time}**.
+{current_character.name} записал: первый приём в **{first_dose_time}**.
 
 **Программа исправления активирована!** ✅
 
-Теперь Городская Стража будет наведываться к тебе каждые **2 часа** для проверки соблюдения режима.
-
-⏰ **Следующее напоминание:** {next_dose.strftime("%H:%M")}
-
-Не вздумай пропускать! Гаспод помнит всех нарушителей.
+Теперь Городская Стража будет наведываться к тебе для проверки соблюдения режима по расписанию фаз лечения.
 
 *"Регулярность — это основа дисциплины. А дисциплина — основа успеха."*
 
-— Гаспод (теперь официально следит за твоим исправлением)
+— {current_character.name} (теперь официально следит за твоим исправлением)
 
 **Используй /stats для контроля прогресса.**
 """
@@ -379,15 +566,75 @@ async def handle_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             gaspode_confirmation, 
             parse_mode='Markdown'
         )
-        logger.info(f"Пользователь {user.id} установил время первого приёма: {first_dose_time}")
+        logger.info(f"Пользователь {user_obj.telegram_id} установил время первого приёма: {first_dose_time}")
         
-        # TODO: В следующих этапах здесь будет планирование напоминаний и создание записей TabexLog
+        # Запускаем систему напоминаний
+        success = await reminder_service.start_reminders_for_user(user_obj.telegram_id, first_dose_time, context.bot)
+        if success:
+            logger.info(f"Напоминания успешно запущены для пользователя {user_obj.telegram_id}")
+        else:
+            logger.error(f"Ошибка запуска напоминаний для пользователя {user_obj.telegram_id}")
+            await update.message.reply_text(
+                "⚠️ Произошла ошибка при запуске напоминаний. Попробуйте перезапустить команду /start."
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка при запуске обычной программы: {e}")
+
+
+async def quit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик команды /quit - досрочное завершение курса лечения.
+    
+    Активирует персонажа СМЕРТЬ, который объясняет последствия.
+    """
+    user = update.effective_user
+    
+    try:
+        await init_database()
+        
+        # Получаем данные пользователя и курса
+        user_repo = UserRepository()
+        user_obj = await user_repo.get_by_telegram_id(user.id)
+        
+        if not user_obj:
+            await update.message.reply_text(
+                "❓ Ты не зарегистрирован в системе. Нет курса для завершения."
+            )
+            return
+        
+        treatment_repo = TreatmentRepository()
+        active_course = await treatment_repo.get_active_by_user_id(user_obj.user_id)
+        
+        if not active_course:
+            await update.message.reply_text(
+                "❓ У тебя нет активного курса лечения. Нечего завершать."
+            )
+            return
+        
+        # Останавливаем напоминания
+        await reminder_service.stop_reminders_for_user(user.id)
+        
+        # Активируем сценарий СМЕРТИ
+        death_message = character_service.activate_death_scenario(
+            active_course, user_obj.first_name, user_obj.gender, "досрочное_завершение"
+        )
+        
+        # Сохраняем изменения в курсе
+        await treatment_repo.update(active_course)
+        
+        await update.message.reply_text(
+            death_message,
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Пользователь {user.id} досрочно завершил курс лечения")
         
     except Exception as e:
-        logger.error(f"Ошибка при подтверждении времени: {e}")
+        logger.error(f"Ошибка при досрочном завершении курса: {e}")
         await update.message.reply_text(
-            "🐺 Рррр! Что-то пошло не так с записью времени! "
-            "Попробуй /start еще раз или беги к ветеринару!"
+            "⚠️ Произошла ошибка при завершении курса. "
+            "Попробуйте позже или обратитесь к администратору."
         )
 
 
@@ -404,10 +651,13 @@ def setup_command_handlers(app: Application) -> None:
         app.add_handler(CommandHandler("help", help_command))
         app.add_handler(CommandHandler("stats", stats_command))
         
+        # Команда завершения курса досрочно
+        app.add_handler(CommandHandler("quit", quit_command))
+        
         # Обработчик ввода времени (текстовые сообщения)
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_time_input))
         
-        logger.info("Обработчики команд капитана Ваймса успешно зарегистрированы")
+        logger.info("Обработчики команд успешно зарегистрированы")
         
     except Exception as e:
         logger.error(f"Ошибка при регистрации обработчиков команд: {e}")
