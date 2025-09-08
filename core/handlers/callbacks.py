@@ -55,6 +55,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         elif callback_data.startswith("catchup_postpone_"):
             await _handle_catchup_postpone(query, context, callback_data)
         
+        # Обработка админских callback'ов
+        elif callback_data.startswith("test_gender_") or callback_data.startswith("sim_"):
+            from .admin_callbacks import handle_admin_callback
+            await handle_admin_callback(update, context)
+        
         elif callback_data == "placeholder":
             await query.edit_message_text("🔧 Эта функция будет реализована в следующих версиях.")
         
@@ -539,11 +544,7 @@ async def _handle_gender_selection(query, context: ContextTypes.DEFAULT_TYPE, ca
 
 📝 **А теперь введи время первой таблетки:**
 Когда ты сегодня принял{'' if gender == 'male' else 'а'} первую таблетку Табекса?
-Формат: **ЧЧ:ММ** (например: 08:30 или 14:15)
-
-*"Регулярность - основа дисциплины!"*
-
-— Гаспод (готов следить за режимом)"""
+Формат: **ЧЧ:ММ** (например: 08:30 или 14:15)"""
             
             gaspode_registered = gaspode_greeting + time_instruction
         else:

@@ -661,7 +661,7 @@ async def handle_deletion_confirmation(update: Update, context: ContextTypes.DEF
         death_farewell = """
 💀 **ГОТОВО.**
 
-Смерть выполнила твою просьбу. Твоё досье стёрто из архивов Стражи.
+СМЕРТЬ выполнил твою просьбу. Твоё досье стёрто из архивов Стражи.
 
 **Что произошло:**
 ✅ Удалены все курсы лечения
@@ -672,9 +672,9 @@ async def handle_deletion_confirmation(update: Update, context: ContextTypes.DEF
 
 Теперь ты можешь начать заново. Используй `/start` когда будешь готов к новой программе исправления.
 
-*"Некоторые люди думают, что Смерть жестока. Но на самом деле Смерть даёт второй шанс."*
+*"НЕКОТОРЫЕ ЛЮДИ ДУМАЮТ, ЧТО СМЕРТЬ ЖЕСТОК. НО НА САМОМ ДЕЛЕ СМЕРТЬ ДАЁТ ВТОРОЙ ШАНС."*
 
-— Смерть (архивариус забвения)
+— СМЕРТЬ (архивариус забвения)
 
 **Увидимся снова, когда решишь вернуться...**
 """
@@ -748,9 +748,9 @@ async def quit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **Для подтверждения напиши точно:** `ПОДТВЕРЖДАЮ`
 **Для отмены используй:** `/start`
 
-*"Смерть - это не конец. Это просто... очень неудобно."*
+*"СМЕРТЬ - ЭТО НЕ КОНЕЦ. ЭТО ПРОСТО... ОЧЕНЬ НЕУДОБНО."*
 
-— Смерть (готов стереть твоё досье)
+— СМЕРТЬ (готов стереть твоё досье)
 """
         
         await update.message.reply_text(
@@ -783,10 +783,24 @@ def setup_command_handlers(app: Application) -> None:
         # Команда завершения курса досрочно
         app.add_handler(CommandHandler("quit", quit_command))
         
+        # Админские команды для тестирования
+        from .admin_commands import (
+            admin_jump_day_command, admin_set_phase_command, 
+            admin_test_gender_command, admin_simulate_full_course_command,
+            admin_reset_course_command, admin_help_command
+        )
+        
+        app.add_handler(CommandHandler("admin_jump_day", admin_jump_day_command))
+        app.add_handler(CommandHandler("admin_set_phase", admin_set_phase_command))
+        app.add_handler(CommandHandler("admin_test_gender", admin_test_gender_command))
+        app.add_handler(CommandHandler("admin_simulate_course", admin_simulate_full_course_command))
+        app.add_handler(CommandHandler("admin_reset_course", admin_reset_course_command))
+        app.add_handler(CommandHandler("admin_help", admin_help_command))
+        
         # Обработчик текстовых сообщений (время, подтверждение удаления)
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
         
-        logger.info("Обработчики команд успешно зарегистрированы")
+        logger.info("Обработчики команд успешно зарегистрированы (включая админские)")
         
     except Exception as e:
         logger.error(f"Ошибка при регистрации обработчиков команд: {e}")
