@@ -8,9 +8,9 @@ services:
     image: tabex-bot:latest
     container_name: tabex-bot
     restart: unless-stopped
-    
     # Переменные окружения
     environment:
+      - DOCKER_CONTAINER=true
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_PATH=${DATABASE_PATH}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -36,6 +36,14 @@ services:
     # ports:
     #   - "8443:8443"
     
+    # Healthcheck для контроля состояния
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/tmp/tabex-bot.lock') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
     # Лог драйвер
     logging:
       driver: json-file
@@ -55,6 +63,7 @@ services:
       - dev
     
     environment:
+      - DOCKER_CONTAINER=true
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_PATH=${DATABASE_PATH}
       - LOG_LEVEL=${LOG_LEVEL}

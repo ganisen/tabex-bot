@@ -75,10 +75,20 @@ class TabexBot:
             
             logger.info("Запуск Табекс-бота...")
             
-            # Запуск polling
+            # Запуск polling с улучшенной обработкой ошибок
             await self.app.initialize()
             await self.app.start()
-            await self.app.updater.start_polling(drop_pending_updates=True)
+            
+            # Добавляем глобальный обработчик ошибок
+            self.app.add_error_handler(error_handler)
+            
+            # Запуск polling с сбросом pending обновлений
+            await self.app.updater.start_polling(
+                drop_pending_updates=True,
+                poll_interval=1.0,  # Интервал между запросами
+                timeout=10,         # Таймаут запроса
+                bootstrap_retries=3  # Количество попыток повторного подключения
+            )
             
             self.is_running = True
             logger.info("Табекс-бот успешно запущен и готов к работе!")
@@ -89,24 +99,59 @@ class TabexBot:
             raise
     
     async def stop(self):
-        """Остановка бота."""
+        """Остановка бота с таймаутом для graceful shutdown."""
         if not self.is_running:
             return
+        
+        self.is_running = False
         
         try:
             logger.info("Остановка Табекс-бота...")
             
             if self.app and self.app.updater:
-                await self.app.updater.stop()
-            if self.app:
-                await self.app.stop()
-                await self.app.shutdown()
+                try:
+                    # Останавливаем updater с таймаутом
+                    await asyncio.wait_for(
+                        self.app.updater.stop(),
+                        timeout=10.0
+                    )
+                    logger.info("Updater остановлен")
+                except asyncio.TimeoutError:
+                    logger.warning("Таймаут при остановке updater'а")
+                except Exception as e:
+                    logger.error(f"Ошибка при остановке updater'а: {e}")
             
-            self.is_running = False
+            if self.app:
+                try:
+                    # Останавливаем приложение с таймаутом
+                    await asyncio.wait_for(
+                        self.app.stop(),
+                        timeout=5.0
+                    )
+                    logger.info("Приложение остановлено")
+                except asyncio.TimeoutError:
+                    logger.warning("Таймаут при остановке приложения")
+                except Exception as e:
+                    logger.error(f"Ошибка при остановке приложения: {e}")
+                
+                try:
+                    # Завершаем shutdown с таймаутом
+                    await asyncio.wait_for(
+                        self.app.shutdown(),
+                        timeout=5.0
+                    )
+                    logger.info("Shutdown завершён")
+                except asyncio.TimeoutError:
+                    logger.warning("Таймаут при shutdown приложения")
+                except Exception as e:
+                    logger.error(f"Ошибка при shutdown: {e}")
+            
             logger.info("Табекс-бот остановлен")
             
         except Exception as e:
-            logger.error(f"Ошибка при остановке бота: {e}")
+            logger.error(f"Критическая ошибка при остановке бота: {e}")
+            # Принудительная остановка если что-то пошло не так
+            self.is_running = False
     
     async def run_forever(self):
         """Запуск бота с обработкой сигналов для graceful shutdown."""
